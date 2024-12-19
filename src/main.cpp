@@ -1,12 +1,17 @@
+// StdLib
 #include <cstdint>
 #include <cstring>
 #include <limits>
 
+// Mbed and STM32 Drivers
 #include "mbed.h"
 #include "drivers/LCD_DISCO_F429ZI.h"
-#include "dtw_distance.hpp"
 #include "stm32f4xx.h"
+
+// Local Files
+#include "macro.hpp"
 #include "dtw_distance.hpp"
+#include "utils.hpp"
 
 // Gyroscope registers
 #define L3GD20_CTRL_REG1        0x20
@@ -25,7 +30,7 @@
 #define RECORDING_DURATION      2000
 
 // Tolerance for gesture comparison
-#define GESTURE_TOLERANCE      500
+#define GESTURE_TOLERANCE     90 
 
 // Press duration for recording (in ms)
 #define LONG_PRESS_DURATION     2000
@@ -198,6 +203,7 @@ int main() {
                     );
                 delay_ms(1000 / SAMPLES_PER_SECOND);
             }
+            standard_scaler(key_vals);
 
             key_recorded = true;
 
@@ -230,6 +236,7 @@ int main() {
                 delay_ms(1000 / SAMPLES_PER_SECOND);
             }
 
+            standard_scaler(gyro_vals);
             // Compare entered key with recorded key
             bool success = false;
             // for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
