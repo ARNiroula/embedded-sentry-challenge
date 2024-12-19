@@ -1,7 +1,7 @@
 #ifndef DTW_DISTANCE_H
 #define DTW_DISTANCE_H 
 
-#define MAX_ARRY_2D_SIZE 50
+#include "macro.hpp"
 
 float p_norm(float a[3], float b[3], uint32_t a_b_dimLEN, float p);
 float dtw_distance_only(
