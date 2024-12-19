@@ -8,7 +8,7 @@
 
 #include "dtw_distance.hpp"
 
-float d[MAX_ARRY_2D_SIZE][MAX_ARRY_2D_SIZE] = { 0 };
+float d[MAX_ARRAY_2D_SIZE][MAX_ARRAY_2D_SIZE] = { 0 };
 
 /**
 * Compute the p_norm between two 1D c++ vectors.
@@ -45,8 +45,8 @@ float p_norm(float a[3], float b[3], uint32_t a_b_dimLEN, float p) {
 * @b 2D vector of [number_of_data_points][number_of_dimensions].
 * @p value of p_norm to use.
 */
-float dtw_distance_only(float a[MAX_ARRY_2D_SIZE][3], uint32_t a_dataPointLEN, uint32_t a_dimLEN,
-    float b[MAX_ARRY_2D_SIZE][3], uint32_t b_dataPointLEN, uint32_t b_dimLEN, float p)
+float dtw_distance_only(float a[MAX_ARRAY_2D_SIZE][3], uint32_t a_dataPointLEN, uint32_t a_dimLEN,
+    float b[MAX_ARRAY_2D_SIZE][3], uint32_t b_dataPointLEN, uint32_t b_dimLEN, float p)
 
 {
     uint32_t n = a_dataPointLEN;
@@ -62,7 +62,7 @@ float dtw_distance_only(float a[MAX_ARRY_2D_SIZE][3], uint32_t a_dataPointLEN, u
 
     //d is 2d size [a_dataPointLEN by][b_dataPointLEN]
 
-    // float d[MAX_ARRY_2D_SIZE][MAX_ARRY_2D_SIZE] = { 0 };
+    // float d[MAX_ARRAY_2D_SIZE][MAX_ARRAY_2D_SIZE] = { 0 };
     memset(d, 0, sizeof d);
     d[0][0] = p_norm(a[0], b[0], a_dimLEN, p);    //in production, can hardcode a_dimLEN = 3
     for (uint32_t i = 1; i < n; i++)

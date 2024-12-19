@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <string>
 
 // Mbed and STM32 Drivers
 #include "mbed.h"
@@ -30,7 +31,7 @@
 #define RECORDING_DURATION      2000
 
 // Tolerance for gesture comparison
-#define GESTURE_TOLERANCE     90 
+#define GESTURE_TOLERANCE     70
 
 // Press duration for recording (in ms)
 #define LONG_PRESS_DURATION     2000
@@ -68,6 +69,8 @@ using namespace std::chrono;
 using namespace std;
 Timer t;
 
+// General Information to display on the LCD Screen
+// std::string lcd_info = "\n Generaiton"
 
 // LCD
 LCD_DISCO_F429ZI lcd;
@@ -80,8 +83,8 @@ DigitalOut led(LED1);
 I2C_HandleTypeDef hi2c;
 
 // Variables to store key gestures
-float key_vals[MAX_ARRY_2D_SIZE][3];
-float gyro_vals[MAX_ARRY_2D_SIZE][3];
+float key_vals[MAX_ARRAY_2D_SIZE][3];
+float gyro_vals[MAX_ARRAY_2D_SIZE][3];
 
 bool key_recorded = false;
 
@@ -96,7 +99,7 @@ void read_gyro(
     uint8_t read_buf[32],
     SPI *spi,
     EventFlags *flags,
-    float arr[MAX_ARRY_2D_SIZE][3]) {
+    float arr[MAX_ARRAY_2D_SIZE][3]) {
     uint16_t raw_gx, raw_gy, raw_gz;
     float gx, gy, gz;
     // Function prototypes
@@ -192,7 +195,7 @@ int main() {
             );
             delay_ms(1000);  // Give user a chance to get ready
 
-            for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
+            for (int i = 0; i < MAX_ARRAY_2D_SIZE; i++) {
                 read_gyro(
                     i,
                     write_buf,
@@ -224,7 +227,7 @@ int main() {
             delay_ms(1000);  // Give user a chance to get ready
             memset(gyro_vals, 0, sizeof gyro_vals);
 
-            for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
+            for (int i = 0; i < MAX_ARRAY_2D_SIZE; i++) {
                 read_gyro(
                     i,
                     write_buf,
@@ -239,22 +242,17 @@ int main() {
             standard_scaler(gyro_vals);
             // Compare entered key with recorded key
             bool success = false;
-            // for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
-            //     printf("%f\t%f\t%f\n", key_vals[i][0], key_vals[i][1], key_vals[i][2]);
-            // }
-            // printf("**********************\n");
-            // for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
-            //     printf("%f\t%f\t%f\n", gyro_vals[i][0], gyro_vals[i][1],gyro_vals[i][2]);
-            // }
+
             dtw_distance = dtw_distance_only(
                 key_vals,
-                MAX_ARRY_2D_SIZE,
+                MAX_ARRAY_2D_SIZE,
                 3,
                 gyro_vals,
-                MAX_ARRY_2D_SIZE,
+                MAX_ARRAY_2D_SIZE,
                 3,
                 2);
-            printf("%f\n\n", dtw_distance);
+
+            printf("Similarity Score => %f\n\n", dtw_distance);
             printf("**********************");
             if (dtw_distance <= GESTURE_TOLERANCE) {
                     success = true;
