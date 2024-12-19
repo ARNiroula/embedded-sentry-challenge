@@ -25,7 +25,7 @@
 #define RECORDING_DURATION      2000
 
 // Tolerance for gesture comparison
-#define GESTURE_TOLERANCE      400
+#define GESTURE_TOLERANCE      500
 
 // Press duration for recording (in ms)
 #define LONG_PRESS_DURATION     2000
@@ -117,15 +117,13 @@ void read_gyro(
 
     arr[row][0] = gx;
     arr[row][1] = gy;
-    arr[row][1] = gz;
+    arr[row][2] = gz;
     delay_ms(1000 / SAMPLES_PER_SECOND);
 }
 
 // Main program
 int main() {
     // --- SPI Initialization ---
-    // SPI(PF_9, PF_8, PF_7, PC_1, use_gpio_ssel)
-    // PF_9 = MOSI, PF_8 = MISO, PF_7 = SCLK, PC_1 = Chip Select (CS)
     SPI spi(PF_9, PF_8, PF_7, PC_1, use_gpio_ssel);
 
     // Buffers for SPI data transfer:
@@ -158,34 +156,17 @@ int main() {
     spi.transfer(write_buf, 2, read_buf, 2, spi_cb);  // Initiate SPI transfer
     flags.wait_all(SPI_FLAG);  // Wait until the transfer completes
 
-    // --- Continuous Gyroscope Data Reading ---
-    // bool has_entered = false;
-    // float gx, gy, gz;  // Variables to store converted angular velocity values
-
-
     // Initialize the gyroscope and LCD
-    memset(key_vals, 0, sizeof key_vals);
-    memset(gyro_vals, 0, sizeof gyro_vals);
-
     lcd.DisplayOn();
     lcd.Clear(LCD_COLOR_WHITE);
 
-    // Initialize hi2c
-    hi2c.Instance = I2C1;
-    hi2c.Init.ClockSpeed = 400000;
-    hi2c.Init.DutyCycle = I2C_DUTYCYCLE_2;
-    hi2c.Init.OwnAddress1 = 0;
-    hi2c.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-    hi2c.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-    hi2c.Init.OwnAddress2 = 0;
-    hi2c.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-    hi2c.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+    // Initialize Key and Entered Gesture value
+    memset(key_vals, 0, sizeof key_vals);
+    memset(gyro_vals, 0, sizeof gyro_vals);
     
     // Main loop
-    // uint8_t data[6];    
     while (1) {
         float dtw_distance = std::numeric_limits<float>::infinity();
-        // uint16_t raw_gx, raw_gy, raw_gz;   // Variables to store raw data
 
         if (button.read() != 1) {
             continue;
@@ -199,9 +180,10 @@ int main() {
         // Determine if it was a short press or long press
         if ((HAL_GetTick() - press_time) >= LONG_PRESS_DURATION) {
             // Long press - Record key gesture
+            memset(key_vals, 0, sizeof key_vals);
             lcd.Clear(LCD_COLOR_BLUE);
             lcd.DisplayStringAt(
-                0, LINE(4), (uint8_t *)"RECORDING!!", CENTER_MODE
+                0, LINE(7), (uint8_t *)"RECORDING!!", CENTER_MODE
             );
             delay_ms(1000);  // Give user a chance to get ready
 
@@ -220,20 +202,21 @@ int main() {
             key_recorded = true;
 
             lcd.Clear(LCD_COLOR_WHITE);
-            lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"RECORDING COMPLETE", CENTER_MODE);
+            lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"RECORDING COMPLETE", CENTER_MODE);
             delay_ms(1000);
         } else {
             // Short press - Enter key
             if (!key_recorded) {
                 lcd.Clear(LCD_COLOR_RED);
-                lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"NO KEY RECORDED", CENTER_MODE);
+                lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"NO KEY RECORDED", CENTER_MODE);
                 delay_ms(1000);
                 continue;
             }
 
             lcd.Clear(LCD_COLOR_BLUE);
-            lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"ENTER KEY", CENTER_MODE);
+            lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"ENTER KEY", CENTER_MODE);
             delay_ms(1000);  // Give user a chance to get ready
+            memset(gyro_vals, 0, sizeof gyro_vals);
 
             for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
                 read_gyro(
@@ -275,7 +258,7 @@ int main() {
                 // Successful unlock
                 printf("SUCCESSSSS!!!!!!!!!!!!!!!!!!!!\n\n\n\n");
                 lcd.Clear(LCD_COLOR_GREEN);
-                lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"UNLOCK SUCCESSFUL", CENTER_MODE);
+                lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"UNLOCK SUCCESSFUL", CENTER_MODE);
                 led = 1;  // Turn on LED
                 delay_ms(2000);  // Display success for 2 seconds
                 led = 0;  // Turn off LED
@@ -283,7 +266,7 @@ int main() {
                 // Unsuccessful unlock
                 printf("FAILUREE!!!!!!!!!!!!!!!!!!!!\n\n\n\n");
                 lcd.Clear(LCD_COLOR_RED);
-                lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"UNLOCK FAILED", CENTER_MODE);
+                lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"UNLOCK FAILED", CENTER_MODE);
                 delay_ms(2000);  // Display failure for 2 seconds
             }
         }
