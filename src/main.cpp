@@ -1,24 +1,38 @@
-#include <cstdio>
+#include <cstdint>
 #include <cstring>
-#include <iostream>
-#include <limits.h>
 #include <limits>
-#include <cstdlib>
 
 #include "mbed.h"
+#include "drivers/LCD_DISCO_F429ZI.h"
+#include "dtw_distance.hpp"
+#include "stm32f4xx.h"
 #include "dtw_distance.hpp"
 
-// =================================================
-// * Recitation 6: SPI and Gyroscope *
-// =================================================
+// Gyroscope registers
+#define L3GD20_CTRL_REG1        0x20
+#define L3GD20_CTRL_REG4        0x23
+#define L3GD20_OUT_X_L          0x28
+#define L3GD20_OUT_X_H          0x29
+#define L3GD20_OUT_Y_L          0x2A
+#define L3GD20_OUT_Y_H          0x2B
+#define L3GD20_OUT_Z_L          0x2C
+#define L3GD20_OUT_Z_H          0x2D
 
-// TODOs:
-// [1] Part 1 & 2: Get started with an SPI object instance and connect to the Gyroscope!
-// [2] Part 3: Read the XYZ axis data from the Gyroscope and Visualize on the Teleplot. 
-// [3] Next Recitation --> Fetching Data from the sensor via Polling vs Interrupts?
+// Gyroscope scaling factor
+#define GYRO_SCALE_FACTOR       (17.5f * 0.017453292519943295769236907684886f / 1000.0f)
 
+// Recording duration in ms
+#define RECORDING_DURATION      2000
 
-// #define MAX_ARRY_2D_SIZE 50
+// Tolerance for gesture comparison
+#define GESTURE_TOLERANCE      400
+
+// Press duration for recording (in ms)
+#define LONG_PRESS_DURATION     2000
+
+// Samples per second and total samples
+#define SAMPLES_PER_SECOND 50
+#define NUM_SAMPLES (RECORDING_DURATION / 1000 * SAMPLES_PER_SECOND)
 
 // --- Register Addresses and Configuration Values ---
 #define CTRL_REG1 0x20               // Control register 1 address
@@ -49,14 +63,70 @@ using namespace std::chrono;
 using namespace std;
 Timer t;
 
+
+// LCD
+LCD_DISCO_F429ZI lcd;
+
+// BUTTON for recording and entering key
+DigitalIn button(PA_0);
+
+// LED for indicating success
+DigitalOut led(LED1);
+I2C_HandleTypeDef hi2c;
+
+// Variables to store key gestures
+float key_vals[MAX_ARRY_2D_SIZE][3];
+float gyro_vals[MAX_ARRY_2D_SIZE][3];
+
+bool key_recorded = false;
+
+void delay_ms(uint32_t ms)
+{
+    HAL_Delay(ms);
+}
+
+void read_gyro(
+    int row,
+    uint8_t write_buf[32],
+    uint8_t read_buf[32],
+    SPI *spi,
+    EventFlags *flags,
+    float arr[MAX_ARRY_2D_SIZE][3]) {
+    uint16_t raw_gx, raw_gy, raw_gz;
+    float gx, gy, gz;
+    // Function prototypes
+    // Prepare to read gyroscope output starting at OUT_X_L
+    // - write_buf[0]: register address with read (0x80) and auto-increment (0x40) bits set
+    write_buf[0] = OUT_X_L | 0x80 | 0x40; // Read mode + auto-increment
+
+    // Perform SPI transfer to read 6 bytes (X, Y, Z axis data)
+    // - write_buf[1:6] contains dummy data for clocking
+    // - read_buf[1:6] will store received data
+    spi->transfer(write_buf, 7, read_buf, 7, spi_cb);
+    flags->wait_all(SPI_FLAG);  // Wait until the transfer completes
+
+    // --- Extract and Convert Raw Data ---
+    // Combine high and low bytes
+    raw_gx = (((uint16_t)read_buf[2]) << 8) | read_buf[1];
+    raw_gy = (((uint16_t)read_buf[4]) << 8) | read_buf[3];
+    raw_gz = (((uint16_t)read_buf[6]) << 8) | read_buf[5];
+
+    gx = raw_gx * DEG_TO_RAD;
+    gy = raw_gy * DEG_TO_RAD;
+    gz = raw_gz * DEG_TO_RAD;
+
+    arr[row][0] = gx;
+    arr[row][1] = gy;
+    arr[row][1] = gz;
+    delay_ms(1000 / SAMPLES_PER_SECOND);
+}
+
+// Main program
 int main() {
     // --- SPI Initialization ---
     // SPI(PF_9, PF_8, PF_7, PC_1, use_gpio_ssel)
     // PF_9 = MOSI, PF_8 = MISO, PF_7 = SCLK, PC_1 = Chip Select (CS)
     SPI spi(PF_9, PF_8, PF_7, PC_1, use_gpio_ssel);
-
-    // TODO: Remove Below
-    srand((unsigned) time(NULL));
 
     // Buffers for SPI data transfer:
     // - write_buf: stores data to send to the gyroscope
@@ -90,113 +160,132 @@ int main() {
 
     // --- Continuous Gyroscope Data Reading ---
     // bool has_entered = false;
-    float gx, gy, gz;  // Variables to store converted angular velocity values
+    // float gx, gy, gz;  // Variables to store converted angular velocity values
 
+
+    // Initialize the gyroscope and LCD
+    memset(key_vals, 0, sizeof key_vals);
+    memset(gyro_vals, 0, sizeof gyro_vals);
+
+    lcd.DisplayOn();
+    lcd.Clear(LCD_COLOR_WHITE);
+
+    // Initialize hi2c
+    hi2c.Instance = I2C1;
+    hi2c.Init.ClockSpeed = 400000;
+    hi2c.Init.DutyCycle = I2C_DUTYCYCLE_2;
+    hi2c.Init.OwnAddress1 = 0;
+    hi2c.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+    hi2c.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+    hi2c.Init.OwnAddress2 = 0;
+    hi2c.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+    hi2c.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
     
-    char key;
-    cout << "Press any key to start the program:" << endl;
-    cin >> key;
-
+    // Main loop
+    // uint8_t data[6];    
     while (1) {
+        float dtw_distance = std::numeric_limits<float>::infinity();
+        // uint16_t raw_gx, raw_gy, raw_gz;   // Variables to store raw data
 
-        t.start();
-
-        uint16_t raw_gx, raw_gy, raw_gz;   // Variables to store raw data
-
-        int i = 0;
-        float dtw_similarity = std::numeric_limits<float>::infinity();
-        float ori_arr[MAX_ARRY_2D_SIZE][3];
-        float arr[MAX_ARRY_2D_SIZE][3];
-        memset(ori_arr, 0, sizeof ori_arr);
-        memset(arr, 0, sizeof arr);
-
-        while (t.elapsed_time().count() <= 3000000)
-        {
-
-            // Prepare to read gyroscope output starting at OUT_X_L
-            // - write_buf[0]: register address with read (0x80) and auto-increment (0x40) bits set
-            write_buf[0] = OUT_X_L | 0x80 | 0x40; // Read mode + auto-increment
-
-            // Perform SPI transfer to read 6 bytes (X, Y, Z axis data)
-            // - write_buf[1:6] contains dummy data for clocking
-            // - read_buf[1:6] will store received data
-            spi.transfer(write_buf, 7, read_buf, 7, spi_cb);
-            flags.wait_all(SPI_FLAG);  // Wait until the transfer completes
-
-            // --- Extract and Convert Raw Data ---
-            // Combine high and low bytes for X-axis
-            raw_gx = (((uint16_t)read_buf[2]) << 8) | read_buf[1];
-
-            // Combine high and low bytes for Y-axis
-            raw_gy = (((uint16_t)read_buf[4]) << 8) | read_buf[3];
-
-            // Combine high and low bytes for Z-axis
-            raw_gz = (((uint16_t)read_buf[6]) << 8) | read_buf[5];
-
-            // --- Debug and Teleplot Output ---
-            // Print raw values for debugging purposes
-            printf("RAW Angular Speed -> gx: %d deg/s, gy: %d deg/s, gz: %d deg/s\n", raw_gx, raw_gy, raw_gz);
-
-            // Print formatted output for Teleplot
-            printf(">x_axis: %d|g\n", raw_gx);
-            printf(">y_axis: %d|g\n", raw_gy);
-            printf(">z_axis: %d|g\n", raw_gz);
-
-            // --- Convert Raw Data to Angular Velocity ---
-            // Scale raw data using the predefined scaling factor
-            gx = raw_gx * DEG_TO_RAD;
-            gy = raw_gy * DEG_TO_RAD;
-            gz = raw_gz * DEG_TO_RAD;
-
-            arr[i][0] = gx;
-            arr[i][1] = gy;
-            arr[i][2] = gz;
-
-            ori_arr[i][0] = gx + (float) (rand() % 5);
-            ori_arr[i][1] = gy + (float) (rand() % 5);
-            ori_arr[i][2] = gz + (float) (rand() % 5);
-            // Print converted values (angular velocity in rad/s)
-            printf("Angular Speed -> gx: %.5f rad/s, gy: %.5f rad/s, gz: %.5f rad/s\n", gx, gy, gz);
-            printf("The time taken was %llu milliseconds\n", duration_cast<milliseconds>(t.elapsed_time()).count());
-            thread_sleep_for(100);
-            printf("Running\n");
-            i++;
+        if (button.read() != 1) {
+            continue;
         }
-        // has_entered = true;
-        printf("Outsideee!!!!\n");
-        t.stop();
-        t.reset();
+        // Check button press
+        uint32_t press_time = HAL_GetTick();
 
-        for (int j = 0; j<10; j++) {
-            printf("%f\t%f\t%f\n", arr[j][0], arr[j][1], arr[j][2]);
+        // Wait for button release
+        while (button.read() == 1) {}
+
+        // Determine if it was a short press or long press
+        if ((HAL_GetTick() - press_time) >= LONG_PRESS_DURATION) {
+            // Long press - Record key gesture
+            lcd.Clear(LCD_COLOR_BLUE);
+            lcd.DisplayStringAt(
+                0, LINE(4), (uint8_t *)"RECORDING!!", CENTER_MODE
+            );
+            delay_ms(1000);  // Give user a chance to get ready
+
+            for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
+                read_gyro(
+                    i,
+                    write_buf,
+                    read_buf,
+                    &spi,
+                    &flags,
+                    key_vals
+                    );
+                delay_ms(1000 / SAMPLES_PER_SECOND);
+            }
+
+            key_recorded = true;
+
+            lcd.Clear(LCD_COLOR_WHITE);
+            lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"RECORDING COMPLETE", CENTER_MODE);
+            delay_ms(1000);
+        } else {
+            // Short press - Enter key
+            if (!key_recorded) {
+                lcd.Clear(LCD_COLOR_RED);
+                lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"NO KEY RECORDED", CENTER_MODE);
+                delay_ms(1000);
+                continue;
+            }
+
+            lcd.Clear(LCD_COLOR_BLUE);
+            lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"ENTER KEY", CENTER_MODE);
+            delay_ms(1000);  // Give user a chance to get ready
+
+            for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
+                read_gyro(
+                    i,
+                    write_buf,
+                    read_buf,
+                    &spi,
+                    &flags,
+                    gyro_vals 
+                    );
+                delay_ms(1000 / SAMPLES_PER_SECOND);
+            }
+
+            // Compare entered key with recorded key
+            bool success = false;
+            // for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
+            //     printf("%f\t%f\t%f\n", key_vals[i][0], key_vals[i][1], key_vals[i][2]);
+            // }
+            // printf("**********************\n");
+            // for (int i = 0; i < MAX_ARRY_2D_SIZE; i++) {
+            //     printf("%f\t%f\t%f\n", gyro_vals[i][0], gyro_vals[i][1],gyro_vals[i][2]);
+            // }
+            dtw_distance = dtw_distance_only(
+                key_vals,
+                MAX_ARRY_2D_SIZE,
+                3,
+                gyro_vals,
+                MAX_ARRY_2D_SIZE,
+                3,
+                2);
+            printf("%f\n\n", dtw_distance);
+            printf("**********************");
+            if (dtw_distance <= GESTURE_TOLERANCE) {
+                    success = true;
+            }
+
+            if (success) {
+
+                // Successful unlock
+                printf("SUCCESSSSS!!!!!!!!!!!!!!!!!!!!\n\n\n\n");
+                lcd.Clear(LCD_COLOR_GREEN);
+                lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"UNLOCK SUCCESSFUL", CENTER_MODE);
+                led = 1;  // Turn on LED
+                delay_ms(2000);  // Display success for 2 seconds
+                led = 0;  // Turn off LED
+            } else {
+                // Unsuccessful unlock
+                printf("FAILUREE!!!!!!!!!!!!!!!!!!!!\n\n\n\n");
+                lcd.Clear(LCD_COLOR_RED);
+                lcd.DisplayStringAt(0, LINE(4), (uint8_t *)"UNLOCK FAILED", CENTER_MODE);
+                delay_ms(2000);  // Display failure for 2 seconds
+            }
         }
-        
-        for (int j = 0; j<10; j++) {
-            printf("%f\t%f\t%f\n", ori_arr[j][0], ori_arr[j][1], ori_arr[j][2]);
-        }
-        // Get the DTW Distance
-        dtw_similarity = dtw_distance_only(
-            ori_arr,
-            MAX_ARRY_2D_SIZE,
-            3,
-            arr,
-            MAX_ARRY_2D_SIZE,
-            3,
-            2);
-
-        printf("The Similarity was %f\n\n", dtw_similarity);
-        cout << "Press any key to make another measurement:" << endl;
-        cin >> key;
-        cout << "Taking another measurement in 3 seconds, please wait for the 'GO!' signal" << endl;
-        thread_sleep_for(1000);
-        cout << "3..." << endl;
-        thread_sleep_for(1000);
-        cout << "2..." << endl;
-        thread_sleep_for(1000);
-        cout << "1..." << endl;
-        thread_sleep_for(1000);
-        cout << "GO!" << endl;
-        thread_sleep_for(500);
-
     }
 }
