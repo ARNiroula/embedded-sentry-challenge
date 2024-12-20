@@ -276,7 +276,7 @@ int main()
                 draw_snowman();
                 // lcd.Clear(LCD_COLOR_GREEN);
                 led = 1;        // Turn on LED
-                delay_ms(2000); // Display success for 2 seconds
+                delay_ms(3000); // Display success for 3 seconds
                 led = 0;        // Turn off LED
             }
             else
