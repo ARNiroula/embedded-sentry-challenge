@@ -2,10 +2,10 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
-#include <string>
 
 // Mbed and STM32 Drivers
 #include "mbed.h"
+#include "drivers/stm32f429i_discovery_lcd.h"
 #include "drivers/LCD_DISCO_F429ZI.h"
 #include "stm32f4xx.h"
 
@@ -31,7 +31,7 @@
 #define RECORDING_DURATION      2000
 
 // Tolerance for gesture comparison
-#define GESTURE_TOLERANCE     70
+#define GESTURE_TOLERANCE    80
 
 // Press duration for recording (in ms)
 #define LONG_PRESS_DURATION     2000
@@ -69,11 +69,61 @@ using namespace std::chrono;
 using namespace std;
 Timer t;
 
-// General Information to display on the LCD Screen
-// std::string lcd_info = "\n Generaiton"
-
 // LCD
 LCD_DISCO_F429ZI lcd;
+
+void delay_ms(uint32_t ms)
+{
+    HAL_Delay(ms);
+}
+
+void draw_snowman() {
+    uint16_t screen_width = lcd.GetXSize(); // Use GetXSize for width
+    uint16_t screen_height = lcd.GetYSize(); // Use GetYSize for height
+    uint16_t center_x = screen_width / 2;
+    for (int i = 220; i > 0; i--) {
+        uint16_t base_y = screen_height - i;
+
+        lcd.Clear(LCD_COLOR_RED);
+        // Draw the body (three circles: bottom, middle, and head)
+        lcd.SetTextColor(LCD_COLOR_WHITE);
+        lcd.FillCircle(center_x, base_y - 30, 15); // Bottom circle
+        lcd.FillCircle(center_x, base_y - 50, 10); // Middle circle
+        lcd.FillCircle(center_x, base_y - 65, 7);  // Head
+
+        // Draw the eyes (small black dots on the head)
+        lcd.SetTextColor(LCD_COLOR_BLACK);
+        lcd.FillCircle(center_x - 3, base_y - 67, 1); // Left eye
+        lcd.FillCircle(center_x + 3, base_y - 67, 1); // Right eye
+
+        // Draw the fixed, mini nose (small orange rectangle)
+        lcd.SetTextColor(LCD_COLOR_ORANGE);
+        lcd.FillRect(center_x - 1, base_y - 65, 3, 2); // Small rectangle for nose
+
+        // Draw the mouth (small black dots)
+        lcd.FillCircle(center_x - 4, base_y - 61, 1); // Left dot
+        lcd.FillCircle(center_x, base_y - 60, 1);     // Center dot
+        lcd.FillCircle(center_x + 4, base_y - 61, 1); // Right dot
+
+        // Draw the arms (two lines)
+        lcd.SetTextColor(LCD_COLOR_BROWN);
+        if (i % 2 == 0) {
+            lcd.DrawLine(center_x - 15, base_y - 50, center_x - 25, base_y - 40); // Left arm
+            lcd.DrawLine(center_x + 15, base_y - 50, center_x + 25, base_y - 40); // Right arm
+        } else {
+            lcd.DrawLine(center_x - 15, base_y - 50, center_x - 30, base_y - 50); // Left arm
+            lcd.DrawLine(center_x + 15, base_y - 50, center_x + 30, base_y - 50); // Right arm
+        }
+
+        // Draw the hat (black rectangle)
+        lcd.SetTextColor(LCD_COLOR_BLACK);
+        lcd.FillRect(center_x - 7, base_y - 75, 14, 3); // Hat brim
+        lcd.FillRect(center_x - 5, base_y - 85, 10, 10); // Hat top
+        delay_ms(50);
+    }
+    lcd.DisplayStringAt(0, LINE(1), (uint8_t *)"HO HO HO ", CENTER_MODE);
+    lcd.DisplayStringAt(0, LINE(2), (uint8_t *)"MERRY CHRISTMAS!!!", CENTER_MODE);
+}
 
 // BUTTON for recording and entering key
 DigitalIn button(PA_0);
@@ -87,11 +137,6 @@ float key_vals[MAX_ARRAY_2D_SIZE][3];
 float gyro_vals[MAX_ARRAY_2D_SIZE][3];
 
 bool key_recorded = false;
-
-void delay_ms(uint32_t ms)
-{
-    HAL_Delay(ms);
-}
 
 void read_gyro(
     int row,
@@ -171,14 +216,14 @@ int main() {
     // Initialize Key and Entered Gesture value
     memset(key_vals, 0, sizeof key_vals);
     memset(gyro_vals, 0, sizeof gyro_vals);
-    
     // Main loop
+    // lcd.Clear(LCD_COLOR_WHITE);
     while (1) {
-        float dtw_distance = std::numeric_limits<float>::infinity();
 
         if (button.read() != 1) {
             continue;
         }
+        float dtw_distance = std::numeric_limits<float>::infinity();
         // Check button press
         uint32_t press_time = HAL_GetTick();
 
@@ -191,7 +236,10 @@ int main() {
             memset(key_vals, 0, sizeof key_vals);
             lcd.Clear(LCD_COLOR_BLUE);
             lcd.DisplayStringAt(
-                0, LINE(7), (uint8_t *)"RECORDING!!", CENTER_MODE
+                0,
+                LINE(7),
+                (uint8_t *) "RECORDING!!",
+                CENTER_MODE
             );
             delay_ms(1000);  // Give user a chance to get ready
 
@@ -217,16 +265,22 @@ int main() {
             // Short press - Enter key
             if (!key_recorded) {
                 lcd.Clear(LCD_COLOR_RED);
-                lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"NO KEY RECORDED", CENTER_MODE);
+                lcd.DisplayStringAt(
+                    0,
+                    LINE(7), 
+                (uint8_t *) "NO KEY RECORDED!!",
+                CENTER_MODE
+                );
                 delay_ms(1000);
                 continue;
             }
 
             lcd.Clear(LCD_COLOR_BLUE);
-            lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"ENTER KEY", CENTER_MODE);
-            delay_ms(1000);  // Give user a chance to get ready
+            lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"PSST: ", CENTER_MODE);
+            lcd.DisplayStringAt(0, LINE(8), (uint8_t *)"ENTER GESTURE", CENTER_MODE);
+            lcd.DisplayStringAt(0, LINE(9), (uint8_t *)"FOR SECRET MESSAGE", CENTER_MODE);
+            delay_ms(2000);  // Give user a chance to get ready
             memset(gyro_vals, 0, sizeof gyro_vals);
-
             for (int i = 0; i < MAX_ARRAY_2D_SIZE; i++) {
                 read_gyro(
                     i,
@@ -252,6 +306,9 @@ int main() {
                 3,
                 2);
 
+            lcd.DisplayStringAt(0, LINE(8), (uint8_t *)"PROCESSING....", CENTER_MODE);
+            lcd.DisplayStringAt(0, LINE(9), (uint8_t *)"PLEASE WAIT", CENTER_MODE);
+
             printf("Similarity Score => %f\n\n", dtw_distance);
             printf("**********************");
             if (dtw_distance <= GESTURE_TOLERANCE) {
@@ -262,8 +319,8 @@ int main() {
 
                 // Successful unlock
                 printf("SUCCESSSSS!!!!!!!!!!!!!!!!!!!!\n\n\n\n");
-                lcd.Clear(LCD_COLOR_GREEN);
-                lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"UNLOCK SUCCESSFUL", CENTER_MODE);
+                draw_snowman();
+                // lcd.Clear(LCD_COLOR_GREEN);
                 led = 1;  // Turn on LED
                 delay_ms(2000);  // Display success for 2 seconds
                 led = 0;  // Turn off LED
@@ -272,6 +329,7 @@ int main() {
                 printf("FAILUREE!!!!!!!!!!!!!!!!!!!!\n\n\n\n");
                 lcd.Clear(LCD_COLOR_RED);
                 lcd.DisplayStringAt(0, LINE(7), (uint8_t *)"UNLOCK FAILED", CENTER_MODE);
+                lcd.DisplayStringAt(0, LINE(8), (uint8_t *)":-(", CENTER_MODE);
                 delay_ms(2000);  // Display failure for 2 seconds
             }
         }
