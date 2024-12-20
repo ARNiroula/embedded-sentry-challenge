@@ -1,3 +1,10 @@
+/**
+Team Members
+Anup Raj Niroula (arn8147)
+Akhil Manoj (am14580)
+Agustin Leon Nunez (al8937)
+*/
+
 // StdLib
 #include <cstdint>
 #include <cstring>
